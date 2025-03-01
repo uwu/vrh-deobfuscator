@@ -1,5 +1,6 @@
 # vrh-deobfuscator
 An automatic downloader and deobfuscator for VRoid Hub models.
+For educational use only. I'll get really mad if you don't use it for educational reasons.
 
 # Usage
 Are you sure you should be using this?
@@ -13,4 +14,4 @@ node src/index.js https://hub.vroid.com/en/characters/6687678955411994848/models
 ```
 
 # Relevant blog post
-[You can read more about this here, if you even care.](https://toon.link/blog/1740863435/stealing-intellectual-property)
+[You can read more about this here, if you even care.](https://toon.link/blog/1740863435/borrowing-intellectual-property)
