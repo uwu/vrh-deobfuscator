@@ -1,0 +1,13 @@
+{
+	"type": "module",
+	"dependencies": {
+		"@babylonjs/ktx2decoder": "^7.49.0",
+		"@gltf-transform/core": "^4.1.1",
+		"@gltf-transform/extensions": "^4.1.1",
+		"@gltf-transform/functions": "^4.1.1",
+		"sharp": "^0.33.5"
+	},
+	"scripts": {
+		"start": "node ./src/index.js"
+	}
+}
