@@ -9,6 +9,7 @@ import {
 import { KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, unlink, readdir } from "node:fs/promises";
+import crypto from "node:crypto";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 
