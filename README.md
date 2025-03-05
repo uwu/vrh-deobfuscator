@@ -10,7 +10,7 @@ Are you sure you should be using this?
 # Install dependencies
 pnpm install
 # Run with a URL for things you want to legally obtain
-node src/index.js https://hub.vroid.com/en/characters/6687678955411994848/models/3497471223710880744
+node src/index.js https://hub.vroid.com/en/characters/3414801470945035921/models/4457759225556181866
 ```
 
 # Troubleshooting
