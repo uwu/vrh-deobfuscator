@@ -238,7 +238,7 @@ export class VRMPreservationExtension extends Extension {
 		const json = jsonDoc.json;
 
 		this.vrmExt = json.extensions.VRM;
-		this.textures = json.textures.map((t) => ({
+		this.textures = (json.textures||[]).map((t) => ({
 			source: t.source,
 			sampler: t.sampler,
 		}));
@@ -258,7 +258,7 @@ export class VRMPreservationExtension extends Extension {
 		if (existsSync("./debug") === false) mkdir("./debug");
 		writeFile("./debug/vrm.json", JSON.stringify(vrmData, null, 2));
 
-		jsonDoc.json.textures = this.textures;
+		jsonDoc.json.textures = this.textures || [];
 
 		return this;
 	}
@@ -289,7 +289,7 @@ export class PIXIVBasisExtension extends Extension {
 
 	preread(context) {
 		console.log("Detected PIXIV basis extension, fixing it up...");
-		const textures = context.jsonDoc.json.textures;
+		const textures = context.jsonDoc.json.textures || [];
 		for (const texture of textures) {
 			if (texture.extensions?.PIXIV_texture_basis) {
 				texture.source = texture.extensions.PIXIV_texture_basis.source;
@@ -401,7 +401,7 @@ async function deobfuscateVRoidHubGLB(id) {
 	const { BasisFile, initializeBasis } = await initialize();
 	initializeBasis();
 
-	const textures = doc.getRoot().listTextures();
+	const textures = doc.getRoot().listTextures() || [];
 	console.log("Decoding textures...");
 	for (const texture of textures) {
 		const image = texture.getImage();
