@@ -19,7 +19,7 @@ node src/index.js https://hub.vroid.com/en/characters/147647967680376151/models/
 # Troubleshooting
 gltf-transform does some things to every model that breaks them when used as a VRM, so the tool automatically patches each model up for usage as a VRM.
 
-To resolve most issues, simply take the resulting VRM and throw it into Blender or Unity (w/ either version of the VRM extension) and re-export a new VRM from there. Ensure you've tried both versions of the Unity extension & Blender before submitting an issue.
+To resolve most issues, simply take the resulting VRM and throw it into Blender or Unity (w/ either version of the VRM extension) and re-export a new VRM from there. Try both versions of the Unity extension & Blender.
 
 
 # Relevant blog post
