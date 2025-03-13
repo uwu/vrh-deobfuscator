@@ -2,6 +2,9 @@
 An automatic downloader and deobfuscator for VRoid Hub models.
 For educational use only. I'll get really mad if you don't use it for educational reasons.
 
+# Why are issues disabled?
+This was mostly made for research purposes, I have no interest in actively enabling piracy (not that piracy is bad lol). If you would like to fix issues with the project, feel free to submit a pull request.
+
 # Usage
 Are you sure you should be using this?
 
