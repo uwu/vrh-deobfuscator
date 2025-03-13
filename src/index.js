@@ -225,6 +225,12 @@ class Deobfuscator {
 	}
 }
 
+const makeSafeFilename = (name) => {
+	return name.replace(/[<>:"\/\\|?*\u0000-\u001F]/g, (x) => {
+		return '_x'+('0'+x.charCodeAt(0).toString(16)).substr(-2)+'_';
+	});
+}
+
 const VRM_EXTENSION_NAME = "VRM";
 const PIXIV_EXTENSION_NAME = "PIXIV_vroid_hub_preview_mesh";
 const PIXIV_BASIS_EXTENSION_NAME = "PIXIV_texture_basis";
@@ -429,7 +435,7 @@ async function deobfuscateVRoidHubGLB(id) {
 				.png()
 				.toBuffer();
 
-			await writeFile(`./debug/${texture.getName()}.ktx2.png`, pngBuffer);
+			await writeFile(`./debug/${makeSafeFilename(texture.getName())}.ktx2.png`, pngBuffer);
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
@@ -457,7 +463,7 @@ async function deobfuscateVRoidHubGLB(id) {
 				.png()
 				.toBuffer();
 
-			await writeFile(`./debug/${texture.getName()}.basis.png`, pngBuffer);
+			await writeFile(`./debug/${makeSafeFilename(texture.getName())}.basis.png`, pngBuffer);
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
