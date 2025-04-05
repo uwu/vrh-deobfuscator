@@ -6,7 +6,7 @@ import {
 	NodeIO,
 	PropertyType,
 } from "@gltf-transform/core";
-import { KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
+import { KHRONOS_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, unlink, readdir } from "node:fs/promises";
 import crypto from "node:crypto";
@@ -368,6 +368,7 @@ async function deobfuscateVRoidHubGLB(id) {
 
 	const io = new NodeIO().registerExtensions([
 		...KHRONOS_EXTENSIONS,
+		EXTTextureWebP,
 		VRMPreservationExtension,
 		PIXIVExtension,
 		PIXIVBasisExtension,
