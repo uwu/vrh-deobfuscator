@@ -231,6 +231,17 @@ const makeSafeFilename = (name) => {
 	});
 }
 
+const writeTexture = async (texture, suffix, buffer) => {
+	let name = texture.getName();
+	const match = name.match(/^data:.*?\bbase64,(.+)(.)$/);
+	if (match) {
+		const data = Buffer.from(match[1], "base64");
+		name = crypto.createHash("md5").update(data).digest("hex")+"_"+match[2];
+		await writeFile(`./debug/${name}.${suffix}.base64.png`, data);
+	}
+	await writeFile(`./debug/${makeSafeFilename(name)}.${suffix}.png`, buffer);
+}
+
 const VRM_EXTENSION_NAME = "VRM";
 const PIXIV_EXTENSION_NAME = "PIXIV_vroid_hub_preview_mesh";
 const PIXIV_BASIS_EXTENSION_NAME = "PIXIV_texture_basis";
@@ -436,7 +447,7 @@ async function deobfuscateVRoidHubGLB(id) {
 				.png()
 				.toBuffer();
 
-			await writeFile(`./debug/${makeSafeFilename(texture.getName())}.ktx2.png`, pngBuffer);
+			await writeTexture(texture, "ktx2", pngBuffer);
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
@@ -464,7 +475,7 @@ async function deobfuscateVRoidHubGLB(id) {
 				.png()
 				.toBuffer();
 
-			await writeFile(`./debug/${makeSafeFilename(texture.getName())}.basis.png`, pngBuffer);
+			await writeTexture(texture, "basis", pngBuffer);
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
