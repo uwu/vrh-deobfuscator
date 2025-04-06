@@ -231,7 +231,7 @@ const makeSafeFilename = (name) => {
 	});
 }
 
-const writeTexture = async (texture, suffix, buffer) => {
+const writeTexture = async (texture, suffix, buffer, ext) => {
 	let name = texture.getName();
 	const match = name.match(/^data:.*?\bbase64,(.+)(.)$/);
 	if (match) {
@@ -239,7 +239,7 @@ const writeTexture = async (texture, suffix, buffer) => {
 		name = crypto.createHash("md5").update(data).digest("hex")+"_"+match[2];
 		await writeFile(`./debug/${name}.${suffix}.base64.png`, data);
 	}
-	await writeFile(`./debug/${makeSafeFilename(name)}.${suffix}.png`, buffer);
+	await writeFile(`./debug/${makeSafeFilename(name)}.${suffix}.${ext||"png"}`, buffer);
 }
 
 const VRM_EXTENSION_NAME = "VRM";
@@ -452,6 +452,21 @@ async function deobfuscateVRoidHubGLB(id) {
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
 		} else if (texture.getMimeType() === "image/basis") {
+
+			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
+			const magic = dv.getUint32(0);
+			if (magic === 0x8950fe47) {
+				console.log("Fixing mime type for PNG", texture.getName());
+				texture.setMimeType("image/png");
+				await writeTexture(texture, "png", image);
+				continue;
+			}else if(magic === 0xffd8ffdb || magic === 0xffd8ffe0 || magic === 0xffd8ffee || magic === 0xffd8ffe1) {
+				console.log("Fixing mime type for JPEG", texture.getName());
+				texture.setMimeType("image/jpeg");
+				await writeTexture(texture, "jpeg", image, 'jpg');
+				continue;
+			}
+
 			const basisFile = new BasisFile(image);
 
 			const width = basisFile.getImageWidth(0, 0);
