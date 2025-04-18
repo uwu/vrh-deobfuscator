@@ -5,6 +5,7 @@ import {
 	Extension,
 	NodeIO,
 	PropertyType,
+	VertexLayout,
 } from "@gltf-transform/core";
 import { KHRONOS_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { existsSync } from "node:fs";
@@ -497,6 +498,7 @@ async function deobfuscateVRoidHubGLB(id) {
 		}
 	}
 
+	io.setVertexLayout(VertexLayout.SEPARATE);
 	const outputGLB = await io.writeBinary(doc);
 	writeFile(`./${id}.deob.vrm`, outputGLB);
 
