@@ -5,6 +5,7 @@ import {
 	Extension,
 	NodeIO,
 	PropertyType,
+	VertexLayout,
 } from "@gltf-transform/core";
 import { KHRONOS_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { existsSync } from "node:fs";
@@ -455,12 +456,12 @@ async function deobfuscateVRoidHubGLB(id) {
 
 			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
 			const magic = dv.getUint32(0);
-			if (magic === 0x8950fe47) {
+			if (magic === 0x89504e47) {
 				console.log("Fixing mime type for PNG", texture.getName());
 				texture.setMimeType("image/png");
 				await writeTexture(texture, "png", image);
 				continue;
-			}else if(magic === 0xffd8ffdb || magic === 0xffd8ffe0 || magic === 0xffd8ffee || magic === 0xffd8ffe1) {
+			} else if(magic === 0xffd8ffdb || magic === 0xffd8ffe0 || magic === 0xffd8ffee || magic === 0xffd8ffe1) {
 				console.log("Fixing mime type for JPEG", texture.getName());
 				texture.setMimeType("image/jpeg");
 				await writeTexture(texture, "jpeg", image, 'jpg');
@@ -497,6 +498,7 @@ async function deobfuscateVRoidHubGLB(id) {
 		}
 	}
 
+	io.setVertexLayout(VertexLayout.SEPARATE);
 	const outputGLB = await io.writeBinary(doc);
 	writeFile(`./${id}.deob.vrm`, outputGLB);
 
