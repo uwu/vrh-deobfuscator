@@ -260,6 +260,8 @@ export class VRMPreservationExtension extends Extension {
 			source: t.source,
 			sampler: t.sampler,
 		}));
+		this.samplers = json.samplers || [];
+
 		return this;
 	}
 
@@ -277,6 +279,7 @@ export class VRMPreservationExtension extends Extension {
 		writeFile("./debug/vrm.json", JSON.stringify(vrmData, null, 2));
 
 		jsonDoc.json.textures = this.textures || [];
+		jsonDoc.json.samplers = this.samplers || [];
 
 		return this;
 	}
