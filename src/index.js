@@ -247,15 +247,74 @@ const VRM_EXTENSION_NAME = "VRM";
 const PIXIV_EXTENSION_NAME = "PIXIV_vroid_hub_preview_mesh";
 const PIXIV_BASIS_EXTENSION_NAME = "PIXIV_texture_basis";
 
-export class VRMPreservationExtension extends Extension {
-	static EXTENSION_NAME = VRM_EXTENSION_NAME;
-	extensionName = VRM_EXTENSION_NAME;
+// Base class - preserve respective json.extensions[] data
+class PreservationExtension extends Extension {
+	static EXTENSION_NAME = null;
+	extensionName = null;
 
 	read(context) {
 		const jsonDoc = context.jsonDoc;
 		const json = jsonDoc.json;
 
-		this.vrmExt = json.extensions.VRM;
+		this.data = json.extensions[this.extensionName];
+		return this;
+	}
+
+	// Write data during export
+	write(context) {
+		const jsonDoc = context.jsonDoc;
+		const data = this.data;
+
+		if (data) {
+			jsonDoc.json.extensions = jsonDoc.json.extensions || {};
+			jsonDoc.json.extensions[this.extensionName] = data;
+			if (existsSync("./debug") === false) mkdir("./debug");
+			writeFile(`./debug/${this.extensionName.toLowerCase()}.json`, JSON.stringify(data, null, 2));
+		}
+
+		return this;
+	}
+}
+
+// Common pool for extensions that need textures to be patched first
+class TexturePoolExtension extends PreservationExtension {
+	static _vrmTextures = null;
+
+	_saveTextures = (json) => {
+		if (this._vrmTextures) return;
+		this._vrmTextures = (json.textures||[]).map((t) => ({
+			name: t.name,
+			source: t.source,
+			sampler: t.sampler,
+		}));
+	}
+
+	_reapplyTextures = (json) => {
+		if (!this._vrmTextures) return;
+		const sourceToIdx = {};
+
+		json.textures.forEach((tex, i) => sourceToIdx[tex.source] = i);
+		this._vrmTextures.forEach(tex => {
+			if (sourceToIdx[tex.source] !== undefined) {
+				json.textures[sourceToIdx[tex.source]] = tex;
+			} else {
+				sourceToIdx[tex.source] = json.textures.push(tex) - 1;
+			}
+		});
+
+		this._vrmTextures = null;
+	}
+}
+
+export class VRM_v0_Extension extends PreservationExtension {
+	static EXTENSION_NAME = VRM_EXTENSION_NAME;
+	extensionName = VRM_EXTENSION_NAME;
+
+	read(context) {
+		super.read(context);
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
 		this.textures = (json.textures||[]).map((t) => ({
 			source: t.source,
 			sampler: t.sampler,
@@ -265,23 +324,166 @@ export class VRMPreservationExtension extends Extension {
 		return this;
 	}
 
-	// Write VRM data during export
 	write(context) {
+		super.write(context);
 		const jsonDoc = context.jsonDoc;
-		const vrmData = this.vrmExt;
-
-		if (vrmData) {
-			jsonDoc.json.extensions = jsonDoc.json.extensions || {};
-			jsonDoc.json.extensions[this.extensionName] = vrmData;
-		}
-
-		if (existsSync("./debug") === false) mkdir("./debug");
-		writeFile("./debug/vrm.json", JSON.stringify(vrmData, null, 2));
 
 		jsonDoc.json.textures = this.textures || [];
 		jsonDoc.json.samplers = this.samplers || [];
 
 		return this;
+	}
+}
+
+export class VRM_v1_Extension extends TexturePoolExtension {
+	static EXTENSION_NAME = "VRMC_vrm";
+	extensionName = "VRMC_vrm";
+
+	read(context) {
+		super.read(context);
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._saveTextures(json);
+		this.samplers = json.samplers || [];
+
+		return this;
+	}
+
+	write(context) {
+		super.write(context);
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._reapplyTextures(json);
+		json.samplers = this.samplers || [];
+
+		return this;
+	}
+}
+
+export class VRM_v1_materials_mtoon_Extension extends TexturePoolExtension {
+	static EXTENSION_NAME = "VRMC_materials_mtoon";
+	extensionName = "VRMC_materials_mtoon";
+	prereadTypes = [PropertyType.MESH];
+	prewriteTypes = [PropertyType.MESH];
+
+	preread(context) {
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._saveTextures(json);
+
+		this.materials_mtoon = {};
+		for (let idx in json.materials) {
+			let mat = json.materials[idx];
+			if (!mat.extensions?.VRMC_materials_mtoon) continue;
+
+			let ext = mat.extensions.VRMC_materials_mtoon;
+			for (let k of Object.keys(ext)) {
+				if (!k.match(/^.*Texture$/)) continue;
+				ext[k]._source = json.textures[ext[k].index].source;
+			}
+			this.materials_mtoon[idx] = ext;
+		}
+	}
+
+	prewrite(context) {
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._reapplyTextures(json);
+
+		const sourceToIdx = {};
+		json.textures.forEach((tex, i) => sourceToIdx[tex.source] = i);
+
+		for (let mat of this.document.getRoot().listMaterials()) {
+			const idx = context.materialIndexMap.get(mat);
+			if (!this.materials_mtoon[idx]) continue;
+
+			json.materials[idx].extensions ||= {};
+			json.materials[idx].extensions.VRMC_materials_mtoon = this.materials_mtoon[idx];
+			const ext = json.materials[idx].extensions.VRMC_materials_mtoon;
+
+			for (let k of Object.keys(ext)) {
+				if (!k.match(/^.*Texture$/)) continue;
+				ext[k].index = sourceToIdx[ext[k]._source];
+				delete ext[k]._source;
+			}
+		}
+
+		delete context._vrmExtTextures;
+	}
+}
+
+export class VRM_v1_node_constraint_Extension extends PreservationExtension {
+	static EXTENSION_NAME = "VRMC_node_constraint";
+	extensionName = "VRMC_node_constraint";
+
+	read(context) {
+		super.read(context);
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this.node_constraint = {};
+		for (let idx in json.nodes) {
+			let node = json.node[idx];
+			if (!node.extensions?.VRMC_node_constraint) continue;
+
+			let ext = node.extensions.VRMC_node_constraint;
+			this.node_constraint[idx] = ext;
+		}
+	}
+
+	write(context) {
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		for (let node of this.document.getRoot().listNodes()) {
+			const idx = context.nodeIndexMap.get(node);
+			if (!this.node_constraint[idx]) continue;
+
+			json.nodes[idx].extensions ||= {};
+			json.nodes[idx].extensions.VRMC_node_constraint = this.node_constraint[idx];
+		}
+	}
+}
+
+export class VRM_v1_materials_hdr_emissiveMultiplier_Extension extends TexturePoolExtension {
+	static EXTENSION_NAME = "VRMC_materials_hdr_emissiveMultiplier";
+	extensionName = "VRMC_materials_hdr_emissiveMultiplier";
+	prereadTypes = [PropertyType.MESH];
+	prewriteTypes = [PropertyType.MESH];
+
+	preread(context) {
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._saveTextures(json);
+
+		this.emissiveMultiplier = {};
+		for (let idx in json.materials) {
+			let mat = json.materials[idx];
+			if (!mat.extensions?.VRMC_materials_hdr_emissiveMultiplier) continue;
+
+			let ext = mat.extensions.VRMC_materials_hdr_emissiveMultiplier;
+			this.emissiveMultiplier[idx] = ext;
+		}
+	}
+
+	prewrite(context) {
+		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
+
+		this._reapplyTextures(json);
+
+		for (let mat of this.document.getRoot().listMaterials()) {
+			const idx = context.materialIndexMap.get(mat);
+			if (!this.emissiveMultiplier[idx]) continue;
+
+			json.materials[idx].extensions ||= {};
+			json.materials[idx].extensions.VRMC_materials_hdr_emissiveMultiplier = this.emissiveMultiplier[idx];
+		}
 	}
 }
 
@@ -381,13 +583,37 @@ async function deobfuscateVRoidHubGLB(id) {
 		console.log(`Fetched and decrypted VRM data for ID: ${id}.`);
 	}
 
+	// Other subextensions that just need their json.extension[] data transferred
+	// https://github.com/vrm-c/vrm-specification/tree/master/specification
+	const VRM_v1_SubExtensions = [];
+	const VRM_v1_SUBEXTENSION_NAMES = [
+		"VRMC_springBone",
+		"VRMC_springBone_limit",
+		"VRMC_springBone_extended_collider",
+		"VRMC_vrm_animation"
+	]
+	for (let extName of VRM_v1_SUBEXTENSION_NAMES) {
+		VRM_v1_SubExtensions.push(
+			class VRM_SubExtension extends PreservationExtension {
+				static EXTENSION_NAME = extName;
+				extensionName = extName;
+			}
+		)
+	}
+
 	const io = new NodeIO().registerExtensions([
 		...KHRONOS_EXTENSIONS,
 		EXTTextureWebP,
-		VRMPreservationExtension,
+		VRM_v0_Extension,
+		VRM_v1_Extension,
+		VRM_v1_materials_mtoon_Extension,
+		VRM_v1_node_constraint_Extension,
+		VRM_v1_materials_hdr_emissiveMultiplier_Extension,
 		PIXIVExtension,
 		PIXIVBasisExtension,
-	]);
+	]).registerExtensions(
+		VRM_v1_SubExtensions
+	);
 
 	// Read the GLB file
 	console.log("Reading GLB file...");
@@ -464,7 +690,7 @@ async function deobfuscateVRoidHubGLB(id) {
 				texture.setMimeType("image/png");
 				await writeTexture(texture, "png", image);
 				continue;
-			} else if(magic === 0xffd8ffdb || magic === 0xffd8ffe0 || magic === 0xffd8ffee || magic === 0xffd8ffe1) {
+			} else if (magic === 0xffd8ffdb || magic === 0xffd8ffe0 || magic === 0xffd8ffee || magic === 0xffd8ffe1) {
 				console.log("Fixing mime type for JPEG", texture.getName());
 				texture.setMimeType("image/jpeg");
 				await writeTexture(texture, "jpeg", image, 'jpg');
