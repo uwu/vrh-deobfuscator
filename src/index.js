@@ -141,15 +141,28 @@ class Deobfuscator {
 		const r = this.metaTextureData[index];
 		const g = this.metaTextureData[index + 1];
 		const b = this.metaTextureData[index + 2];
-		return [r / (255 * 16), g / (255 * 16), b / (255 * 16)];
+		return [r / 255, g / 255, b / 255];
 	}
 
-	processVertexDisplacement(accessor, vertexCount, meta, processed) {
+	processVertexDisplacement(accessor, vertexCount, meta, version, processed) {
 		const array = accessor.getArray();
 
-		const adjustComponent = (value, meta) => {
-			return value - Math.sign(value) * meta;
-		};
+		let adjustComponent;
+		switch (version) {
+			case "3.0":
+				adjustComponent = (value, meta) => {
+					return value - Math.sign(value) * meta / 16;
+				};
+				break;
+			case "4.0":
+				adjustComponent = (value, meta) => {
+					return value * (2 ** (meta / 8));
+				};
+				break;
+			default:
+				throw new Error(`Unknown obfuscation version: ${version}`);
+		}
+
 
 		for (let i = 0; i < vertexCount; i++) {
 			const uVal = Math.floor(meta[i * 2] * 256);
@@ -217,6 +230,7 @@ class Deobfuscator {
 					position,
 					vertexCount,
 					meta.getArray(),
+					version,
 					processed,
 				);
 
