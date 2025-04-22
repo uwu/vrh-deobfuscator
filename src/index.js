@@ -427,7 +427,7 @@ export class VRM_v1_node_constraint_Extension extends PreservationExtension {
 
 		this.node_constraint = {};
 		for (let idx in json.nodes) {
-			let node = json.node[idx];
+			let node = json.nodes[idx];
 			if (!node.extensions?.VRMC_node_constraint) continue;
 
 			let ext = node.extensions.VRMC_node_constraint;
