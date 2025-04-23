@@ -569,16 +569,18 @@ async function deobfuscateVRoidHubGLB(id) {
 		seedMap = await computeSeedMap(id, vrmInfo.url);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
-		const response = await fetch(
-			`https://hub.vroid.com/api/character_models/${id}/optimized_preview`,
-			{
-				headers: {
-					"X-Api-Version": "11",
-					"User-Agent":
-						"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-				},
+		const options = {
+			headers: {
+				"X-Api-Version": "11",
+				"User-Agent":
+					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 			},
-		);
+		};
+		let response = await fetch(`https://hub.vroid.com/api/character_models/${id}/optimized_preview`, options);
+		if (response.status===404) {
+			console.log('/optimized_preview not found, trying /preview')
+			response = await fetch(`https://hub.vroid.com/api/character_models/${id}/preview`, options);
+		}
 
 		vrmData = await response.arrayBuffer();
 		const vrmPath = `./cache/${id}.glb`;
@@ -667,10 +669,11 @@ async function deobfuscateVRoidHubGLB(id) {
 	console.log("Decoding textures...");
 	for (const texture of textures) {
 		const image = texture.getImage();
+		const mime = texture.getMimeType();
 
 		if (!image) continue;
 
-		if (texture.getMimeType() === "image/ktx2") {
+		if (mime === "image/ktx2") {
 			const decoded = await decoder.decode(image, {
 				ASTC: true,
 				BC7: true,
@@ -695,7 +698,7 @@ async function deobfuscateVRoidHubGLB(id) {
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
-		} else if (texture.getMimeType() === "image/basis") {
+		} else if (mime === "image/basis") {
 
 			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
 			const magic = dv.getUint32(0);
@@ -738,6 +741,19 @@ async function deobfuscateVRoidHubGLB(id) {
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
+		} else if (mime === "image/png") {
+
+			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
+			const magic = dv.getUint32(0);
+			
+			if (magic === 0x52494646) {
+				console.log("Convering WEBP to PNG:", texture.getName());
+				const pngBuffer = await sharp(image)
+					.png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
+					.toBuffer();
+				texture.setImage(pngBuffer);
+				await writeTexture(texture, "webp", pngBuffer);
+			}
 		}
 	}
 
