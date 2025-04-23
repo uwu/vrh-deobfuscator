@@ -669,10 +669,11 @@ async function deobfuscateVRoidHubGLB(id) {
 	console.log("Decoding textures...");
 	for (const texture of textures) {
 		const image = texture.getImage();
+		const mime = texture.getMimeType();
 
 		if (!image) continue;
 
-		if (texture.getMimeType() === "image/ktx2") {
+		if (mime === "image/ktx2") {
 			const decoded = await decoder.decode(image, {
 				ASTC: true,
 				BC7: true,
@@ -697,7 +698,7 @@ async function deobfuscateVRoidHubGLB(id) {
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
-		} else if (texture.getMimeType() === "image/basis") {
+		} else if (mime === "image/basis") {
 
 			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
 			const magic = dv.getUint32(0);
@@ -740,6 +741,19 @@ async function deobfuscateVRoidHubGLB(id) {
 
 			texture.setImage(pngBuffer);
 			texture.setMimeType("image/png");
+		} else if (mime === "image/png") {
+
+			const dv = new DataView(image.buffer, image.byteOffset, image.byteLength);
+			const magic = dv.getUint32(0);
+			
+			if (magic === 0x52494646) {
+				console.log("Convering WEBP to PNG:", texture.getName());
+				const pngBuffer = await sharp(image)
+					.png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
+					.toBuffer();
+				texture.setImage(pngBuffer);
+				await writeTexture(texture, "webp", pngBuffer);
+			}
 		}
 	}
 
