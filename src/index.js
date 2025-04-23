@@ -569,16 +569,18 @@ async function deobfuscateVRoidHubGLB(id) {
 		seedMap = await computeSeedMap(id, vrmInfo.url);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
-		const response = await fetch(
-			`https://hub.vroid.com/api/character_models/${id}/optimized_preview`,
-			{
-				headers: {
-					"X-Api-Version": "11",
-					"User-Agent":
-						"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-				},
+		const options = {
+			headers: {
+				"X-Api-Version": "11",
+				"User-Agent":
+					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 			},
-		);
+		};
+		let response = await fetch(`https://hub.vroid.com/api/character_models/${id}/optimized_preview`, options);
+		if (response.status===404) {
+			console.log('/optimized_preview not found, trying /preview')
+			response = await fetch(`https://hub.vroid.com/api/character_models/${id}/preview`, options);
+		}
 
 		vrmData = await response.arrayBuffer();
 		const vrmPath = `./cache/${id}.glb`;
