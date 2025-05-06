@@ -49,6 +49,13 @@ const decryptAndDecodeVRMFile = async (fileContents) => {
 	const decodedSize = new DataView(decrypted.slice(0, 4)).getUint32(0, true);
 	const decryptedBody = new Uint8Array(decrypted.slice(4));
 
+	try {
+		const zlib = await import('node:zlib');
+		return zlib.zstdDecompressSync(decryptedBody, { maxOutputLength: decodedSize });
+	} catch(e) {
+		console.log("zlib.zstdDecompress requires Node v23.8; fallback to ZSTDDecoder");
+	}
+
 	const decoder = new ZSTDDecoder();
 	await decoder.init();
 
