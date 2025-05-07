@@ -327,7 +327,7 @@ class TexturePoolExtension extends PreservationExtension {
 	}
 }
 
-export class VRM_v0_Extension extends PreservationExtension {
+export class VRM_v0_Extension extends TexturePoolExtension {
 	static EXTENSION_NAME = VRM_EXTENSION_NAME;
 	extensionName = VRM_EXTENSION_NAME;
 
@@ -336,21 +336,41 @@ export class VRM_v0_Extension extends PreservationExtension {
 		const jsonDoc = context.jsonDoc;
 		const json = jsonDoc.json;
 
-		this.textures = (json.textures||[]).map((t) => ({
-			source: t.source,
-			sampler: t.sampler,
-		}));
+		this._saveTextures(json);
 		this.samplers = json.samplers || [];
+
+		this.data.materialProperties ||= [];
+		for (let mat of this.data.materialProperties) {
+			if (!mat.textureProperties) continue;
+			mat._textureSources = [];
+			for (let prop in mat.textureProperties) {
+				mat._textureSources[prop] = json.textures[mat.textureProperties[prop]].source;
+			}
+		}
 
 		return this;
 	}
 
 	write(context) {
-		super.write(context);
 		const jsonDoc = context.jsonDoc;
+		const json = jsonDoc.json;
 
-		jsonDoc.json.textures = this.textures || [];
-		jsonDoc.json.samplers = this.samplers || [];
+		this._reapplyTextures(json);
+		json.samplers = this.samplers || [];
+
+		const sourceToIdx = {};
+		json.textures.forEach((tex, i) => sourceToIdx[tex.source] = i);
+
+		this.data.materialProperties ||= [];
+		for (let mat of this.data.materialProperties) {
+			if (!mat._textureSources) continue;
+			for (let prop in mat._textureSources) {
+				mat.textureProperties[prop] = sourceToIdx[mat._textureSources[prop]];
+			}
+			delete mat._textureSources;
+		}
+
+		super.write(context);
 
 		return this;
 	}
@@ -432,8 +452,6 @@ export class VRM_v1_materials_mtoon_Extension extends TexturePoolExtension {
 				delete ext[k]._source;
 			}
 		}
-
-		delete context._vrmExtTextures;
 	}
 }
 
@@ -457,6 +475,7 @@ export class VRM_v1_node_constraint_Extension extends PreservationExtension {
 	}
 
 	write(context) {
+		super.write(context);
 		const jsonDoc = context.jsonDoc;
 		const json = jsonDoc.json;
 
@@ -584,7 +603,7 @@ async function deobfuscateVRoidHubGLB(id) {
 			},
 		};
 		let response = await fetch(`https://hub.vroid.com/api/character_models/${id}/optimized_preview`, options);
-		if (response.status===404) {
+		if (response.status === 404) {
 			console.log('/optimized_preview not found, trying /preview')
 			response = await fetch(`https://hub.vroid.com/api/character_models/${id}/preview`, options);
 		}
