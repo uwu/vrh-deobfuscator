@@ -17,6 +17,7 @@ import sharp from "sharp";
 import { default as initialize } from "./basis_transcoder.cjs";
 
 const seedMapStartingState = {
+	1761208024: 3174,
 	1698286986: 21955,
 	1689231785: 32123,
 	1667373233: 5453,
