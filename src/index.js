@@ -17,6 +17,7 @@ import sharp from "sharp";
 import { default as initialize } from "./basis_transcoder.cjs";
 
 const seedMapStartingState = {
+	1599883309: 3549,
 	1761208024: 3174,
 	1698286986: 21955,
 	1689231785: 32123,
@@ -122,18 +123,25 @@ class RandomGenerator {
 		this._w = this._w ^ (this._w >>> 19) ^ (temp ^ (temp >>> 8));
 		return this._w;
 	}
+
+	replaceX(x) {
+		this._x = x
+	}
 }
 
 class Deobfuscator {
-	constructor(seed) {
+	constructor(seed, timestamp) {
 		this.seed = seed;
+		this.timestamp = timestamp;
 		this.metaTextureData = this._generateMetaTexture(seed);
-		this.prng = new RandomGenerator(seed);
 	}
 
 	_generateMetaTexture(seed) {
 		console.log("Generating meta texture...");
 		const prng = new RandomGenerator(seed);
+		if (this.timestamp === "1599883309") {
+			prng.replaceX(0x2567de00)
+		}
 		const data = new Uint8Array(256 * 256 * 4);
 		for (let i = 0; i < 256 * 256; i++) {
 			data[i * 4] = prng.nextInRange(256); // R
@@ -200,6 +208,9 @@ class Deobfuscator {
 	processPrimitive(document, primitive) {
 		const vertexCount = primitive.getAttribute("POSITION").getCount();
 		const randomGenerator = new RandomGenerator(this.seed);
+		if (this.timestamp === "1599883309") {
+			randomGenerator.replaceX(0x2567de00)
+		}
 		const metaData = new Float32Array(2 * vertexCount);
 
 		for (let i = 0; i < 2 * vertexCount; i++) {
@@ -685,7 +696,7 @@ async function deobfuscateVRoidHubGLB(id) {
 	if (seed === undefined) {
 		throw new Error(`Seed not found for timestamp: ${timestamp}`);
 	}
-	const deobfuscator = new Deobfuscator(seed);
+	const deobfuscator = new Deobfuscator(seed, timestamp);
 	deobfuscator.processDocument(doc, version);
 
 	const decoder = new KTX2Decoder();
