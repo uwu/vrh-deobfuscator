@@ -24,6 +24,8 @@ const seedMapStartingState = {
 	1698286986: 21955,
 	1689231785: 32123,
 	1667373233: 5453,
+	//New seedmap 17 Dec 25
+	1764841611: 29199,
 	legacy: 0,
 };
 
