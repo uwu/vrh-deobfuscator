@@ -83,7 +83,8 @@ const computeSeedMap = async (inputValue, url) => {
 		return Object.fromEntries(
 			Object.entries(seedMapStartingState).map(([key, value]) => [
 				key,
-				value + hashInt,
+				// 32bit signed integer overflow wrapping
+				(value + hashInt + 2147483648) % 4294967296 - 2147483648,
 			]),
 		);
 	}
