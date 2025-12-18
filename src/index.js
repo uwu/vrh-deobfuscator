@@ -18,15 +18,8 @@ import { default as initialize } from "./basis_transcoder.cjs";
 import { generate_buffer, generate_texture } from "./deobfuscator.cjs"
 
 const seedMapStartingState = {
-	612168628: 0,
-	1599883309: 3549,
-	1761208024: 3174,
-	1698286986: 21955,
-	1689231785: 32123,
-	1667373233: 5453,
-	//New seedmap 17 Dec 25
 	1764841611: 29199,
-	legacy: 0,
+	66995809: 77365945,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
@@ -150,9 +143,7 @@ class Deobfuscator {
 		}
 
 		const prng = new RandomGenerator(this.seed);
-		if (this.timestamp === "1599883309") {
-			prng.replaceX(0x2567de00)
-		}
+		prng.replaceX(0x2567de00)
 		const data = new Uint8Array(256 * 256 * 4);
 		for (let i = 0; i < 256 * 256; i++) {
 			data[i * 4] = prng.nextInRange(256); // R
@@ -220,9 +211,7 @@ class Deobfuscator {
 			metaData = generate_buffer(BigInt(this.seed), this.someConstantIdk, 2 * vertexCount)
 		} else {
 			const randomGenerator = new RandomGenerator(this.seed);
-			if (this.timestamp === "1599883309") {
-				randomGenerator.replaceX(0x2567de00)
-			}
+			randomGenerator.replaceX(0x2567de00)
 			metaData = new Float32Array(2 * vertexCount);
 
 			for (let i = 0; i < 2 * vertexCount; i++) {
