@@ -20,6 +20,7 @@ import { generate_buffer, generate_texture } from "./deobfuscator.cjs"
 const seedMapStartingState = {
 	1764841611: 29199,
 	66995809: 77365945,
+	98756153: 74670526,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
