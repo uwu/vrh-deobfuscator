@@ -13,15 +13,15 @@ import { mkdir, writeFile, readFile, unlink, readdir } from "node:fs/promises";
 import crypto from "node:crypto";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { setGlobalDispatcher, Agent } from 'undici';
 
 import { default as initialize } from "./basis_transcoder.cjs";
 import { generate_buffer, generate_texture } from "./deobfuscator.cjs"
 
 const seedMapStartingState = {
-	1764841611: 29199,
-	66995809: 77365945,
 	98756153: 74670526,
 	53816997: 38325553,
+	4058237768: 1289559305,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
@@ -85,6 +85,8 @@ const computeSeedMap = async (inputValue, url) => {
 		return Object.fromEntries(
 			Object.entries(seedMapStartingState).map(([key, value]) => [
 				key,
+				key === "4058237768" ?
+				value ^ hashInt :
 				// 32bit signed integer overflow wrapping
 				(value + hashInt + 2147483648) % 4294967296 - 2147483648,
 			]),
@@ -611,6 +613,10 @@ async function deobfuscateVRoidHubGLB(id) {
 		seedMap = await computeSeedMap(id, vrmInfo.url);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
+		// vroid hub blocks HTTP/1.1 requests, so we have to enable HTTP/2
+		setGlobalDispatcher(new Agent({
+			allowH2: true
+		}));
 		const options = {
 			headers: {
 				"X-Api-Version": "11",
