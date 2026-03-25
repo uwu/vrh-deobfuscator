@@ -22,6 +22,7 @@ const seedMapStartingState = {
 	98756153: 74670526,
 	53816997: 38325553,
 	4058237768: 1289559305,
+	58245139: 9402684,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
@@ -85,10 +86,7 @@ const computeSeedMap = async (inputValue, url) => {
 		return Object.fromEntries(
 			Object.entries(seedMapStartingState).map(([key, value]) => [
 				key,
-				key === "4058237768" ?
-				value ^ hashInt :
-				// 32bit signed integer overflow wrapping
-				(value + hashInt + 2147483648) % 4294967296 - 2147483648,
+				value ^ hashInt,
 			]),
 		);
 	}
