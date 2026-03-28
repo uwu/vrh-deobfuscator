@@ -23,6 +23,7 @@ const seedMapStartingState = {
 	53816997: 38325553,
 	4058237768: 1289559305,
 	58245139: 9402684,
+	2664362260: 1972414975,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
