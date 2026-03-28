@@ -19,10 +19,8 @@ import { default as initialize } from "./basis_transcoder.cjs";
 import { generate_buffer, generate_texture } from "./deobfuscator.cjs"
 
 const seedMapStartingState = {
-	98756153: 74670526,
-	53816997: 38325553,
-	4058237768: 1289559305,
 	58245139: 9402684,
+	2664362260: 1972414975,
 };
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
@@ -591,6 +589,7 @@ async function deobfuscateVRoidHubGLB(id) {
 
 	let vrmData = null;
 	let seedMap = null;
+	let currentUrl = null;
 
 	if (existsSync("./debug") === true) {
 		console.log("Cleaning up debug folder...");
@@ -606,9 +605,10 @@ async function deobfuscateVRoidHubGLB(id) {
 	if (existsSync(`./cache/${id}.json`) === true) {
 		console.log(`Loading cached GLB for ID: ${id}...`);
 		const vrmInfo = JSON.parse(await readFile(`./cache/${id}.json`, "utf-8"));
+		currentUrl = vrmInfo.url;
 		const vrmPath = `./cache/${id}.glb`;
 		vrmData = await readFile(vrmPath);
-		seedMap = await computeSeedMap(id, vrmInfo.url);
+		seedMap = await computeSeedMap(id, currentUrl);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
 		// vroid hub blocks HTTP/1.1 requests, so we have to enable HTTP/2
@@ -636,12 +636,13 @@ async function deobfuscateVRoidHubGLB(id) {
 
 		vrmData = await decryptAndDecodeVRMFile(vrmData);
 
+		currentUrl = response.url;
 		await writeFile(vrmPath, vrmData);
 		await writeFile(
 			vrmInfoPath,
-			JSON.stringify({ id, url: response.url }, null, 2),
+			JSON.stringify({ id, url: currentUrl }, null, 2),
 		);
-		seedMap = await computeSeedMap(id, response.url);
+		seedMap = await computeSeedMap(id, currentUrl);
 		console.log(`Fetched and decrypted VRM data for ID: ${id}.`);
 	}
 
@@ -699,11 +700,41 @@ async function deobfuscateVRoidHubGLB(id) {
 
 	console.log("Obfuscation version and timestamp:", version, timestamp);
 
-	const seed = seedMap[timestamp];
+	let seed = seedMap[timestamp];
 
 	if (seed === undefined) {
-		throw new Error(`Seed not found for timestamp: ${timestamp}`);
+		console.log(`\n======================================================`);
+		console.log(`[!] Seed not found for timestamp: ${timestamp}`);
+		console.log(`[!] Triggering auto-extractor to update seeds...`);
+		console.log(`======================================================\n`);
+		try {
+			const { execSync } = await import('node:child_process');
+			execSync('node extract_seeds.mjs --update', { stdio: 'inherit' });
+			
+			// Auto load new seeds from the updated file
+			const content = await readFile(new URL(import.meta.url), 'utf-8');
+			const newMapMatch = content.match(/const seedMapStartingState\s*=\s*\{([^}]*)\}/);
+			if (newMapMatch) {
+				const entryRegex = /(\d+)\s*:\s*(\d+)/g;
+				let em;
+				while ((em = entryRegex.exec(newMapMatch[1])) !== null) {
+					seedMapStartingState[em[1]] = parseInt(em[2], 10);
+				}
+			}
+			// Recompute seedMap now that seedMapStartingState has new mappings
+			seedMap = await computeSeedMap(id, currentUrl);
+			seed = seedMap[timestamp];
+		} catch (e) {
+			console.error("\n[X] Auto-extraction failed:", e.message);
+		}
+
+		if (seed === undefined) {
+			throw new Error(`Seed still not found for timestamp: ${timestamp} even after auto-extraction.`);
+		} else {
+			console.log(`\n[✔] Auto-extraction successful! Resuming download process...\n`);
+		}
 	}
+	
 	const deobfuscator = new Deobfuscator(seed, version, timestamp);
 	deobfuscator.processDocument(doc);
 
