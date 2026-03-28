@@ -2,18 +2,18 @@
 /**
  * VRoid Hub Seed Map Auto-Extractor
  * ==================================
- * 自动从 VRoid Hub 前端 JS 中提取最新的 seedMapStartingState。
+ * Automatically extracts the latest seedMapStartingState from VRoid Hub's frontend JS.
  *
- * 原理:
- *   1. 访问 hub.vroid.com 获取 Next.js 构建 ID
- *   2. 下载 _buildManifest.js 获取所有 chunk 路径
- *   3. 扫描 chunk 搜索包含 "seedMap" 的 webpack module
- *   4. 提取 RC4 加密的字符串表和解密函数
- *   5. 执行旋转 + 解密，提取 seed map 的 key-value 对
+ * How it works:
+ * 1. Visit hub.vroid.com to get the Next.js build ID
+ * 2. Download _buildManifest.js to get all chunk paths
+ * 3. Scan chunks to find the webpack module containing "seedMap"
+ * 4. Extract the RC4 encrypted string table and decryption function
+ * 5. Execute rotation + decryption to extract seed map key-value pairs
  *
- * 用法:
- *   node extract_seeds.mjs             # 仅显示提取结果
- *   node extract_seeds.mjs --update    # 提取并自动更新 src/index.js
+ * Usage:
+ * node extract_seeds.mjs             # Only show extraction results
+ * node extract_seeds.mjs --update    # Extract and automatically update src/index.js
  */
 
 import { setGlobalDispatcher, Agent, fetch } from 'undici';
@@ -34,7 +34,7 @@ const HEADERS = {
   'Accept-Encoding': 'identity',
 };
 
-// 用于在 chunk 中搜索包含 seed 逻辑的 webpack module 的关键词
+// Keywords used to search for the webpack module containing the seed logic in the chunks
 const SEARCH_PATTERNS = ['seedMap', '2352940687395663367'];
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────────────────
@@ -50,34 +50,34 @@ async function fetchText(url) {
 // ─── Step 1: Get Build ID ───────────────────────────────────────────────────────
 
 async function getBuildId() {
-  console.log('[1/5] 获取 VRoid Hub 构建 ID...');
+  console.log('[1/5] Fetching VRoid Hub build ID...');
   const html = await fetchText(VROID_HUB_URL);
 
-  // Next.js build ID 格式: /_next/static/{buildId}/_buildManifest.js
+  // Next.js build ID format: /_next/static/{buildId}/_buildManifest.js
   const match = html.match(/\/_next\/static\/([a-zA-Z0-9_-]+)\/_buildManifest\.js/);
-  if (!match) throw new Error('无法从页面中提取 Next.js 构建 ID');
+  if (!match) throw new Error('Failed to extract Next.js build ID from the page');
 
-  console.log(`    构建 ID: ${match[1]}`);
+  console.log(`    Build ID: ${match[1]}`);
   return match[1];
 }
 
 // ─── Step 2: Get Chunk List ─────────────────────────────────────────────────────
 
 async function getChunkPaths(buildId) {
-  console.log('[2/5] 获取 webpack chunk 列表...');
+  console.log('[2/5] Fetching webpack chunk list...');
   const baseUrl = 'https://hub.vroid.com';
   const manifestUrl = `${baseUrl}/_next/static/${buildId}/_buildManifest.js`;
   const manifest = await fetchText(manifestUrl);
 
   const chunkPaths = [...new Set(manifest.match(/static\/chunks\/[^"'\s,\]]+\.js/g) || [])];
-  console.log(`    找到 ${chunkPaths.length} 个 chunks`);
+  console.log(`    Found ${chunkPaths.length} chunks`);
   return chunkPaths;
 }
 
 // ─── Step 3: Find Seed Module Chunk ─────────────────────────────────────────────
 
 async function findSeedChunk(chunkPaths) {
-  console.log('[3/5] 搜索包含 seed 逻辑的 chunk...');
+  console.log('[3/5] Searching for the chunk containing seed logic...');
   const baseUrl = 'https://hub.vroid.com';
 
   for (const chunkPath of chunkPaths) {
@@ -87,31 +87,31 @@ async function findSeedChunk(chunkPaths) {
       const hasAll = SEARCH_PATTERNS.every(p => content.includes(p));
       if (hasAll) {
         const filename = chunkPath.split('/').pop();
-        console.log(`    ✓ 找到目标 chunk: ${filename} (${(content.length / 1024).toFixed(0)} KB)`);
+        console.log(`    ✓ Target chunk found: ${filename} (${(content.length / 1024).toFixed(0)} KB)`);
         return content;
       }
     } catch {
       // skip failed chunks
     }
   }
-  throw new Error('未找到包含 seed 逻辑的 chunk');
+  throw new Error('Chunk containing seed logic not found');
 }
 
 // ─── Step 4: Extract & Decode the Seed Module ───────────────────────────────────
 
 /**
- * 从大型 chunk 中提取包含 seed 逻辑的 webpack module，
- * 然后解密 RC4 混淆的字符串表以获取 seed map 值。
+ * Extracts the webpack module containing the seed logic from the large chunk,
+ * then decrypts the RC4 obfuscated string table to get the seed map values.
  *
- * 锚点: 使用已知的 seed 值字面量（如 "9402684" 或其他数字字符串）
- * 来定位 seed module，而非 "seedMap"（后者出现在 React 组件代码中）。
+ * Anchor: Uses known seed value literals (e.g., "9402684" or other numeric strings)
+ * to locate the seed module, rather than "seedMap" (which appears in React component code).
  */
 function extractSeedMap(chunkContent) {
-  console.log('[4/5] 提取并解密 seed module...');
+  console.log('[4/5] Extracting and decrypting seed module...');
 
-  // -- 4a: 定位 seed module --
-  // 搜索 i.d(t,{i:()=>FUNC}) 导出标记，它在 seed 值附近
-  // 先找到已知的 seed 值字面量 "9402684" 或其他数字字符串作为锚点
+  // -- 4a: Locate seed module --
+  // Search for i.d(t,{i:()=>FUNC}) export marker, which is near the seed values
+  // First find known seed value literals like "9402684" or other numeric strings as an anchor
   const knownSeedPatterns = ['"9402684"', '"74670526"', '"38325553"', '"1289559305"'];
   let anchorIdx = -1;
   let anchorPattern = '';
@@ -120,28 +120,28 @@ function extractSeedMap(chunkContent) {
     if (idx !== -1) { anchorIdx = idx; anchorPattern = p; break; }
   }
   if (anchorIdx === -1) {
-    // 备选: 搜索 RC4 模块导出模式 + SHA-1 哈希逻辑的組合
-    // 查找包含 "SHA-1" 或 sha1 的模块附近的 i.d 导出
+    // Fallback: Search for RC4 module export pattern + SHA-1 hashing logic combination
+    // Find i.d exports near modules containing "SHA-1" or sha1
     const sha1Idx = chunkContent.indexOf('"sha1"');
     if (sha1Idx !== -1) anchorIdx = sha1Idx;
-    else throw new Error('无法定位 seed module (未找到已知 seed 值或 SHA-1 引用)');
+    else throw new Error('Failed to locate seed module (known seed value or SHA-1 reference not found)');
   }
-  console.log(`    锚点: ${anchorPattern || '"sha1"'} @ 位置 ${anchorIdx}`);
+  console.log(`    Anchor: ${anchorPattern || '"sha1"'} @ position ${anchorIdx}`);
 
-  // 从锚点向前搜索最近的 i.d(t,{i:()=>...}) 导出标记
+  // Search backwards from the anchor for the nearest i.d(t,{i:()=>...}) export marker
   const backSearchStart = Math.max(0, anchorIdx - 10000);
   const backRegion = chunkContent.substring(backSearchStart, anchorIdx);
   const exportMatches = [...backRegion.matchAll(/i\.d\(t,\{i:\(\)=>(\w+)\}\)/g)];
-  if (exportMatches.length === 0) throw new Error('未找到 webpack module 导出标记');
+  if (exportMatches.length === 0) throw new Error('Webpack module export marker not found');
   const lastExport = exportMatches[exportMatches.length - 1];
   const exportAbsIdx = backSearchStart + lastExport.index;
-  console.log(`    导出标记: i.d(t,{i:()=>${lastExport[1]}}) @ 位置 ${exportAbsIdx}`);
+  console.log(`    Export marker: i.d(t,{i:()=>${lastExport[1]}}) @ position ${exportAbsIdx}`);
 
-  // -- 4b: 从导出标记回溯找到 module 开头 --
+  // -- 4b: Trace back from the export marker to find the module start --
   // Webpack modules format: NUMBER:(e,t,i)=>{ ... }
   let moduleStart = exportAbsIdx;
   for (let j = exportAbsIdx - 1; j > Math.max(0, exportAbsIdx - 15000); j--) {
-    // 匹配 "数字:(e,t,i)" 或 "数字:(e,t,i)=>"
+    // Match "number:(e,t,i)" or "number:(e,t,i)=>"
     const slice = chunkContent.substring(j, j + 15);
     if (/^\d+:\(e,t,i/.test(slice)) {
       moduleStart = j;
@@ -149,7 +149,7 @@ function extractSeedMap(chunkContent) {
     }
   }
 
-  // -- 4c: 找到 module 结尾 (匹配花括号) --
+  // -- 4c: Find module end (matching braces) --
   let braceCount = 0, started = false, moduleEnd = exportAbsIdx;
   for (let j = moduleStart; j < Math.min(chunkContent.length, moduleStart + 50000); j++) {
     if (chunkContent[j] === '{') { braceCount++; started = true; }
@@ -158,49 +158,49 @@ function extractSeedMap(chunkContent) {
   }
 
   const moduleCode = chunkContent.substring(moduleStart, moduleEnd);
-  console.log(`    Module 大小: ${moduleCode.length} 字节`);
+  console.log(`    Module size: ${moduleCode.length} bytes`);
 
-  // 验证提取的 module 包含关键内容
+  // Verify the extracted module contains key content
   if (!moduleCode.includes('i.d(t,')) {
-    throw new Error('提取的 module 不包含导出标记，定位可能有误');
+    throw new Error('Extracted module does not contain export marker, localization might be wrong');
   }
 
-  // -- 4d: 提取字符串表 --
+  // -- 4d: Extract string table --
   const arrayMatch = moduleCode.match(/function\s+\w+\(\)\s*\{\s*let\s+\w+\s*=\s*\[([\s\S]*?)\];\s*return/);
-  if (!arrayMatch) throw new Error('未找到字符串表数组');
+  if (!arrayMatch) throw new Error('String table array not found');
 
-  // 使用 JS 的原生 Parser 提取字符串数组，避免任何正则边界问题
+  // Use JS native Parser to extract string array, avoiding regex boundary issues
   let stringArray = [];
   try {
     stringArray = new Function('return [' + arrayMatch[1] + ']')();
   } catch (err) {
-    throw new Error('无法解析字符串表数组: ' + err.message);
+    throw new Error('Failed to parse string table array: ' + err.message);
   }
 
-  console.log(`    字符串表: ${stringArray.length} 条`);
+  console.log(`    String table: ${stringArray.length} items`);
 
-  // -- 4e: 提取 RC4 函数的基础偏移 --
+  // -- 4e: Extract RC4 function base offset --
   const offsetMatch = moduleCode.match(/function\s+(\w+)\(e,\s*t\)\s*\{\s*e\s*-=\s*(\d+)/);
-  if (!offsetMatch) throw new Error('未找到 RC4 函数的偏移值');
+  if (!offsetMatch) throw new Error('RC4 function offset value not found');
   const decryptFuncName = offsetMatch[1];
   const baseOffset = parseInt(offsetMatch[2], 10);
-  console.log(`    RC4 函数: ${decryptFuncName}(), 偏移: ${baseOffset}`);
+  console.log(`    RC4 Function: ${decryptFuncName}(), Offset: ${baseOffset}`);
 
-  // -- 4f: 提取旋转目标值 --
+  // -- 4f: Extract rotation target value --
   const rotationMatch = moduleCode.match(/===\s*(\d{4,10})\)\s*break/);
-  if (!rotationMatch) throw new Error('未找到旋转目标值');
+  if (!rotationMatch) throw new Error('Rotation target value not found');
   const rotationTarget = parseInt(rotationMatch[1], 10);
-  console.log(`    旋转目标值: ${rotationTarget}`);
+  console.log(`    Rotation target value: ${rotationTarget}`);
 
-  // -- 4g: 提取旋转公式 --
+  // -- 4g: Extract rotation formula --
   const formulaRegion = moduleCode.match(/for\s*\(;;\)\s*try\s*\{([\s\S]*?)===\s*\d+\)\s*break/);
-  if (!formulaRegion) throw new Error('未找到旋转公式区域');
+  if (!formulaRegion) throw new Error('Rotation formula region not found');
   const formulaCode = formulaRegion[1];
 
-  // -- 4h: 实现 RC4 解密 --
+  // -- 4h: Implement RC4 decryption --
   const currentArray = [...stringArray];
 
-  // Base64 解码 (自定义字母表: 小写在前)
+  // Base64 decoding (Custom alphabet: lowercase first)
   function customBase64Decode(str) {
     const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';
     let decoded = '';
@@ -215,7 +215,7 @@ function extractSeedMap(chunkContent) {
     return decodeURIComponent(result);
   }
 
-  // RC4 解密
+  // RC4 Decryption
   function rc4Decrypt(encoded, key) {
     const decoded = customBase64Decode(encoded);
     let r = [], n = 0, a, o = '';
@@ -233,7 +233,7 @@ function extractSeedMap(chunkContent) {
     return o;
   }
 
-  // a() 函数的完整实现 (带缓存)
+  // Complete implementation of a() function (with caching)
   const decryptCache = {};
   function decryptString(idx, key) {
     const adjustedIdx = idx - baseOffset;
@@ -246,7 +246,7 @@ function extractSeedMap(chunkContent) {
     return result;
   }
 
-  // -- 4i: 执行字符串表旋转 --
+  // -- 4i: Execute string table rotation --
   function evaluateRotationFormula() {
     let evalCode = formulaCode
       .replace(/parseInt\s*\(\s*\w+\((\d+),\s*"([^"]+)"\)\s*\)/g,
@@ -277,23 +277,23 @@ function extractSeedMap(chunkContent) {
       console.log('    [Debug] value on attempt 0:', value, 'target:', rotationTarget);
     }
     if (value === rotationTarget) {
-      console.log(`    ✓ 字符串表旋转完成 (${attempt} 次旋转)`);
+      console.log(`    ✓ String table rotation complete (${attempt} rotations)`);
       rotated = true;
       break;
     }
     currentArray.push(currentArray.shift());
   }
-  if (!rotated) throw new Error('字符串表旋转失败');
+  if (!rotated) throw new Error('String table rotation failed');
 
-  // -- 4j: 提取 seed map 配置对象的属性 --
+  // -- 4j: Extract properties of the seed map configuration object --
   let objVarName = '';
   let objCode = '';
   // find "9402684" literal or uGHKa
   const seedPattern = moduleCode.includes('"9402684"') ? '"9402684"' : (moduleCode.includes('uGHKa') ? 'uGHKa' : null);
-  if (!seedPattern) throw new Error('未找到 seed map 配置对象锚点');
+  if (!seedPattern) throw new Error('Seed map configuration object anchor not found');
   const anchorIdx2 = moduleCode.indexOf(seedPattern);
   
-  // 回溯找到对象变量名 "let o={" 或 ",o={"
+  // Trace back to find object variable name "let o={" or ",o={"
   let objStart = -1;
   for (let j = anchorIdx2; j > Math.max(0, anchorIdx2 - 1000); j--) {
     if (moduleCode[j] === '{' && moduleCode[j-1] === '=') {
@@ -306,9 +306,9 @@ function extractSeedMap(chunkContent) {
       }
     }
   }
-  if (!objVarName) throw new Error('未定位到配置对象起始位置');
+  if (!objVarName) throw new Error('Failed to locate configuration object start position');
   
-  // 匹配结束的 '}'
+  // Match closing '}'
   let braceCount2 = 0;
   let objEnd = -1;
   for (let j = objStart; j < Math.min(moduleCode.length, objStart + 20000); j++) {
@@ -323,16 +323,16 @@ function extractSeedMap(chunkContent) {
   }
   objCode = moduleCode.substring(objStart, objEnd);
 
-  // 解码对象中所有属性值
+  // Decode all property values in the object
   const propRegex = /(\w+)\s*:\s*(?:(\w+)\((\d+),\s*"([^"]+)"\)(?:\s*\+\s*(?:(\w+)\((\d+),\s*"([^"]+)"\)|"([^"]*)"))?|"([^"]*)"|(function\([^)]*\)\s*\{[^}]*\}))/g;
   const objProps = {};
   let pm;
   while ((pm = propRegex.exec(objCode)) !== null) {
     const propName = pm[1];
     if (pm[9] !== undefined) {
-      objProps[propName] = pm[9]; // 字符串字面量
+      objProps[propName] = pm[9]; // String literal
     } else if (pm[10]) {
-      continue; // 函数值, 跳过
+      continue; // Function value, skip
     } else if (pm[3]) {
       let value = decryptString(parseInt(pm[3], 10), pm[4]);
       if (pm[5] && pm[6] && pm[7]) {
@@ -344,17 +344,17 @@ function extractSeedMap(chunkContent) {
     }
   }
 
-  console.log('\n    解码后的配置对象属性:');
+  console.log('\n    Decoded configuration object properties:');
   for (const [k, v] of Object.entries(objProps)) {
     if (typeof v === 'string' && v.length < 50) {
       console.log(`      ${k} = "${v}"`);
     }
   }
 
-  // -- 4k: 提取 seed map 赋值逻辑 --
+  // -- 4k: Extract seed map assignment logic --
   const seedMapEntries = {};
 
-  // 提取局部变量字符串表 (例如 let r="pyfM", s="N#QU")
+  // Extract local variable string table (e.g., let r="pyfM", s="N#QU")
   const localVars = {};
   const stringBefore = moduleCode.substring(Math.max(0, objStart - 150), objStart);
   let varsStr = '';
@@ -383,7 +383,7 @@ function extractSeedMap(chunkContent) {
     return localVars[keyOrVar] || keyOrVar;
   }
 
-  // 匹配 l[o.PROP1] = o.PROP2
+  // Match l[o.PROP1] = o.PROP2
   const simpleAssignRegex = new RegExp(`\\w+\\[${objVarName}\\.(\\w+)\\]\\s*=\\s*${objVarName}\\.(\\w+)`, 'g');
   let sm2;
   while ((sm2 = simpleAssignRegex.exec(moduleCode)) !== null) {
@@ -396,8 +396,8 @@ function extractSeedMap(chunkContent) {
     }
   }
 
-  // 支持 a(IDX, KEY) 方式，其中 KEY 可能是字面量也可能是变量
-  // 匹配 l[o.PROP] = o[a(IDX, KEY_VAR)] 或 l[o[a(IDX, KEY_VAR)]] = o[a(IDX, KEY_VAR)]
+  // Support a(IDX, KEY) format, where KEY can be a literal or a variable
+  // Match l[o.PROP] = o[a(IDX, KEY_VAR)] or l[o[a(IDX, KEY_VAR)]] = o[a(IDX, KEY_VAR)]
   const assignRegex = new RegExp(
     `(\\w+)\\[${objVarName}\\.(\\w+)\\]\\s*=\\s*${objVarName}\\[\\w+\\((\\d+),\\s*([a-zA-Z0-9_"'$]+)\\)\\]` +
     `|` +
@@ -426,12 +426,12 @@ function extractSeedMap(chunkContent) {
     }
   }
 
-  // 验证提取结果
+  // Verify extraction results
   if (Object.keys(seedMapEntries).length === 0) {
-    throw new Error('未能提取任何 seed map 条目');
+    throw new Error('Failed to extract any seed map entries');
   }
 
-  // -- 4l: 检测 computeSeedMap 运算逻辑 --
+  // -- 4l: Detect computeSeedMap operation logic --
   let sopOperation = 'XOR';
   if (moduleCode.includes(',10)^')) sopOperation = 'XOR';
   let normalOperation = 'ADD';
@@ -457,14 +457,14 @@ async function updateIndexJs(seedMap) {
 
   const seedMapRegex = /const seedMapStartingState\s*=\s*\{[^}]*\};/;
   if (!seedMapRegex.test(content)) {
-    throw new Error('在 src/index.js 中未找到 seedMapStartingState');
+    throw new Error('seedMapStartingState not found in src/index.js');
   }
 
   const newSeedMap = formatSeedMap(seedMap);
   content = content.replace(seedMapRegex, newSeedMap);
 
   await writeFile(indexPath, content, 'utf-8');
-  console.log(`    ✓ 已更新 src/index.js`);
+  console.log(`    ✓ Updated src/index.js`);
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────────
@@ -474,33 +474,33 @@ async function main() {
   const shouldUpdate = args.includes('--update');
 
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║   VRoid Hub Seed Map 自动提取工具            ║');
+  console.log('║   VRoid Hub Seed Map Auto-Extractor          ║');
   console.log('╚══════════════════════════════════════════════╝\n');
 
   try {
-    // Step 1: 获取构建 ID
+    // Step 1: Get build ID
     const buildId = await getBuildId();
 
-    // Step 2: 获取 chunk 列表
+    // Step 2: Get chunk list
     const chunkPaths = await getChunkPaths(buildId);
 
-    // Step 3: 找到目标 chunk
+    // Step 3: Find target chunk
     const chunkContent = await findSeedChunk(chunkPaths);
 
-    // Step 4: 提取并解密 seed map
+    // Step 4: Extract and decrypt seed map
     const { seedMap, sopOperation, normalOperation } = extractSeedMap(chunkContent);
 
-    // Step 5: 输出结果
+    // Step 5: Output results
     console.log('\n╔══════════════════════════════════════════════╗');
-    console.log('║              提取结果                         ║');
+    console.log('║              Extraction Results              ║');
     console.log('╚══════════════════════════════════════════════╝\n');
 
     console.log(formatSeedMap(seedMap));
-    console.log(`\ncomputeSeedMap 运算逻辑:`);
-    console.log(`  s=op 路径: ${sopOperation} (value ${sopOperation === 'XOR' ? '^' : '+'} hashInt)`);
-    console.log(`  普通路径:  ${normalOperation} (value + modelId)`);
+    console.log(`\ncomputeSeedMap operation logic:`);
+    console.log(`  s=op path: ${sopOperation} (value ${sopOperation === 'XOR' ? '^' : '+'} hashInt)`);
+    console.log(`  Normal path:  ${normalOperation} (value + modelId)`);
 
-    // 与当前代码对比
+    // Compare with current code
     const indexPath = join(__dirname, 'src', 'index.js');
     const currentCode = await readFile(indexPath, 'utf-8');
     const currentMatch = currentCode.match(/const seedMapStartingState\s*=\s*\{([^}]*)\}/);
@@ -515,23 +515,23 @@ async function main() {
       const currentStr = JSON.stringify(currentEntries);
       const newStr = JSON.stringify(seedMap);
       if (currentStr === newStr) {
-        console.log('\n✅ src/index.js 中的 seedMapStartingState 已是最新，无需更新。');
+        console.log('\n✅ seedMapStartingState in src/index.js is up to date, no update needed.');
       } else {
-        console.log('\n⚠  src/index.js 中的 seedMapStartingState 需要更新:');
-        console.log(`   当前: ${JSON.stringify(currentEntries)}`);
-        console.log(`   最新: ${JSON.stringify(seedMap)}`);
+        console.log('\n⚠  seedMapStartingState in src/index.js needs to be updated:');
+        console.log(`   Current: ${JSON.stringify(currentEntries)}`);
+        console.log(`   Latest: ${JSON.stringify(seedMap)}`);
 
         if (shouldUpdate) {
           await updateIndexJs(seedMap);
         } else {
-          console.log('\n   运行 node extract_seeds.mjs --update 自动更新');
+          console.log('\n   Run node extract_seeds.mjs --update to update automatically');
         }
       }
     }
 
-    console.log('\n完成。');
+    console.log('\nDone.');
   } catch (err) {
-    console.error(`\n❌ 错误: ${err.message}`);
+    console.error(`\n❌ Error: ${err.message}`);
     if (process.env.DEBUG) console.error(err.stack);
     process.exit(1);
   }
