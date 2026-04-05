@@ -6,7 +6,8 @@
 		"@gltf-transform/extensions": "^4.1.1",
 		"@gltf-transform/functions": "^4.1.1",
 		"sharp": "^0.33.5",
-		"undici": "^7.22.0"
+		"undici": "^7.22.0",
+		"webcrack-unpacker": "^1.0.2"
 	},
 	"scripts": {
 		"start": "node ./src/index.js"
