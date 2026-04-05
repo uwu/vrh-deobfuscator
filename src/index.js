@@ -9,19 +9,15 @@ import {
 } from "@gltf-transform/core";
 import { KHRONOS_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile, readFile, unlink, readdir } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, readdir, rm } from "node:fs/promises";
+import vm from "node:vm"
 import crypto from "node:crypto";
-import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { setGlobalDispatcher, Agent } from 'undici';
+import { unpack } from "webcrack-unpacker";
 
 import { default as initialize } from "./basis_transcoder.cjs";
 import { generate_buffer, generate_texture } from "./deobfuscator.cjs"
-
-const seedMapStartingState = {
-	58245139: 9402684,
-	2664362260: 1972414975,
-};
 
 const decryptAndDecodeVRMFile = async (fileContents) => {
 	console.log("Starting to decrypt and decode VRM file...");
@@ -63,38 +59,97 @@ const decryptAndDecodeVRMFile = async (fileContents) => {
 	return decoded;
 };
 
-const computeSeedMap = async (inputValue, url) => {
-	console.log("Computing seed map...");
-	if (url?.includes("s=op")) {
-		const apiVersionOffset = ["/v1/", "/v2/"].some((prefix) =>
-			url.includes(prefix),
-		)
-			? 6
-			: 5;
-		const path = url.split("/").slice(apiVersionOffset).join("/");
+async function fetchText(url) {
+	const headers = {
+  		'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+  		'Accept': '*/*',
+  		'Accept-Language': 'en-US,en;q=0.9',
+  		'Accept-Encoding': 'identity',
+	};
+	
+	const response = await fetch(url, { headers })
+	if (!response.ok) {
+		throw new Error(`Couldn't get ${url}, status code: ${response.status}`)
+	}
+	return response.text()
+}
 
-		const hash = createHash("sha1");
-		hash.update(new TextEncoder().encode(path));
-		const hashBuffer = hash.digest().buffer;
+function regexMatch(string, regex) {
+	const match = string.match(regex)
+	if (match === null) {
+		throw new Error("Couldn't match regex")
+	}
+	match.shift()
+	return match
+}
 
-		const hashInt = new DataView(hashBuffer).getInt32(
-			hashBuffer.byteLength - 4,
-			true,
-		);
-		return Object.fromEntries(
-			Object.entries(seedMapStartingState).map(([key, value]) => [
-				key,
-				value ^ hashInt,
-			]),
-		);
+async function fetchSeedMapModule() {
+	console.log("Fetching seed map generation module...");
+
+	const baseUrl = "https://hub.vroid.com"
+
+	const html = await fetchText(`${baseUrl}/en`)
+	const [ webpackJsPath ] = regexMatch(html, /<script src="(\/_next\/static\/chunks\/webpack-[\da-f]{16}\.js)"/)
+	
+	const webpackJs = await fetchText(baseUrl + webpackJsPath)
+	const [ modelViewerNumId ] = regexMatch(webpackJs, /(\d+):"ModelViewer"/)
+	const [ modelViewerHexId ] = regexMatch(webpackJs, new RegExp(`${modelViewerNumId}:"([\\da-f]{16})"`))
+
+	const modelViewerJs = await fetchText(`${baseUrl}/_next/static/chunks/ModelViewer.${modelViewerHexId}.js`)
+
+	const unpacked = await unpack(modelViewerJs)
+
+	let moduleJs;
+	for (const module of unpacked.bundle.modules) {
+    	// check for custom base64 alphabet injected by obfuscator.
+    	// if the module is obfuscated, it's probably the seedmap gen code :3
+    	if (module[1].code.includes('"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/="')) {
+        	console.log(`Found seed map gen module: ${module[1].id}`)
+        	moduleJs = module[1].code
+    	}
 	}
 
-	return Object.fromEntries(
-		Object.entries(seedMapStartingState).map(([key, value]) => [
-			key,
-			value + Number.parseInt(inputValue, 10),
-		]),
-	);
+	if (moduleJs === undefined) {
+		throw new Error("Seed map gen module not found")
+	}
+
+	return moduleJs
+}
+
+// vroid hub adds new timestamps fairly often in an obfuscated JS module, so instead of
+// reimplementing it ourselves it's better to just fetch their code and run it :)
+const computeSeedMap = async (inputValue, url) => {
+	let moduleJs
+	if (existsSync("./cache/seedmapModule.js")) {
+		moduleJs = await readFile("./cache/seedmapModule.js", 'utf8')
+	} else {
+		moduleJs = await fetchSeedMapModule()
+		await writeFile("./cache/seedmapModule.js", moduleJs)
+	}
+
+	console.log("Computing seed map...")
+
+	const seedmapFuncRegex = /^export let ([\w$]+) = async (\([\w$\s,]+\)) =>/m
+	const [ seedmapFuncName, seedmapFuncArgs ] = regexMatch(moduleJs, seedmapFuncRegex)
+
+	// epic hack since es modules can't be run under node's vm thingy
+	moduleJs = moduleJs.replace(seedmapFuncRegex, `async function ${seedmapFuncName} ${seedmapFuncArgs}`)
+
+	const context = {
+    	// setInterval is used for some anti-debugging crap, we can just stub this one
+    	setInterval: function(){},
+    	window: {
+    	    crypto: {
+    	        subtle: crypto.subtle
+    	    }
+    	},
+    	TextEncoder
+	};
+	vm.createContext(context);
+	vm.runInContext(moduleJs, context);
+
+	// console.log("seedMapStartingState", await context[seedmapFunctionName]("0", ""))
+	return await context[seedmapFuncName](inputValue, url)
 };
 
 class RandomGenerator {
@@ -587,9 +642,13 @@ export class PIXIVBasisExtension extends Extension {
 async function deobfuscateVRoidHubGLB(id) {
 	console.log("Starting deobfuscation process for VRoid Hub GLB...");
 
+	// vroid hub blocks HTTP/1.1 requests, so we have to enable HTTP/2
+	setGlobalDispatcher(new Agent({
+		allowH2: true
+	}));
+
 	let vrmData = null;
-	let seedMap = null;
-	let currentUrl = null;
+	let vrmUrl = null;
 
 	if (existsSync("./debug") === true) {
 		console.log("Cleaning up debug folder...");
@@ -605,16 +664,12 @@ async function deobfuscateVRoidHubGLB(id) {
 	if (existsSync(`./cache/${id}.json`) === true) {
 		console.log(`Loading cached GLB for ID: ${id}...`);
 		const vrmInfo = JSON.parse(await readFile(`./cache/${id}.json`, "utf-8"));
-		currentUrl = vrmInfo.url;
+		vrmUrl = vrmInfo.url;
 		const vrmPath = `./cache/${id}.glb`;
 		vrmData = await readFile(vrmPath);
-		seedMap = await computeSeedMap(id, currentUrl);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
-		// vroid hub blocks HTTP/1.1 requests, so we have to enable HTTP/2
-		setGlobalDispatcher(new Agent({
-			allowH2: true
-		}));
+		
 		const options = {
 			headers: {
 				"X-Api-Version": "11",
@@ -636,15 +691,16 @@ async function deobfuscateVRoidHubGLB(id) {
 
 		vrmData = await decryptAndDecodeVRMFile(vrmData);
 
-		currentUrl = response.url;
+		vrmUrl = response.url;
 		await writeFile(vrmPath, vrmData);
 		await writeFile(
 			vrmInfoPath,
-			JSON.stringify({ id, url: currentUrl }, null, 2),
+			JSON.stringify({ id, url: vrmUrl }, null, 2),
 		);
-		seedMap = await computeSeedMap(id, currentUrl);
 		console.log(`Fetched and decrypted VRM data for ID: ${id}.`);
 	}
+
+	let seedMap = await computeSeedMap(id, vrmUrl);
 
 	// Other subextensions that just need their json.extension[] data transferred
 	// https://github.com/vrm-c/vrm-specification/tree/master/specification
@@ -703,35 +759,14 @@ async function deobfuscateVRoidHubGLB(id) {
 	let seed = seedMap[timestamp];
 
 	if (seed === undefined) {
-		console.log(`\n======================================================`);
-		console.log(`[!] Seed not found for timestamp: ${timestamp}`);
-		console.log(`[!] Triggering auto-extractor to update seeds...`);
-		console.log(`======================================================\n`);
-		try {
-			const { execSync } = await import('node:child_process');
-			execSync('node extract_seeds.mjs --update', { stdio: 'inherit' });
-			
-			// Auto load new seeds from the updated file
-			const content = await readFile(new URL(import.meta.url), 'utf-8');
-			const newMapMatch = content.match(/const seedMapStartingState\s*=\s*\{([^}]*)\}/);
-			if (newMapMatch) {
-				const entryRegex = /(\d+)\s*:\s*(\d+)/g;
-				let em;
-				while ((em = entryRegex.exec(newMapMatch[1])) !== null) {
-					seedMapStartingState[em[1]] = parseInt(em[2], 10);
-				}
-			}
-			// Recompute seedMap now that seedMapStartingState has new mappings
-			seedMap = await computeSeedMap(id, currentUrl);
-			seed = seedMap[timestamp];
-		} catch (e) {
-			console.error("\n[X] Auto-extraction failed:", e.message);
-		}
+		console.log(`Seed not found for timestamp ${timestamp}, fetching new seedmap gen module...`)
+		await rm("./cache/seedmapModule.js")
+		seedMap = await computeSeedMap(id, vrmUrl);
+
+		seed = seedMap[timestamp]
 
 		if (seed === undefined) {
-			throw new Error(`Seed still not found for timestamp: ${timestamp} even after auto-extraction.`);
-		} else {
-			console.log(`\n[✔] Auto-extraction successful! Resuming download process...\n`);
+			throw new Error(`Seed not found for timestamp: ${timestamp}`);
 		}
 	}
 	
