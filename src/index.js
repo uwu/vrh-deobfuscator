@@ -1057,6 +1057,7 @@ if(user_match)
 		} else {
 			console.log(`Skipping (already exists): ${model_id}`);
 		}
+		await sleep(5000);
 	}
 	if(error_list){
 		console.log("error list",error_list);
