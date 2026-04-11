@@ -11,9 +11,12 @@ Are you sure you should be using this?
 # Usage, but like, actually
 ```bash
 # Install dependencies
-pnpm install
+npm install
 # Run with a URL for things you want to legally obtain
+# Download a single model
 node src/index.js https://hub.vroid.com/en/characters/147647967680376151/models/259570871427745417
+# Download All Models Under Users
+node src/index.js https://hub.vroid.com/en/users/109373793
 ```
 
 # Troubleshooting
