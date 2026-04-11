@@ -717,8 +717,10 @@ async function get_user_model_ids(id) {
 }
 
 async function download_model_info(id) {
-	
 	let jsonData = null;
+	setGlobalDispatcher(new Agent({
+		allowH2: true
+	}));
 	let response = await fetch(`https://hub.vroid.com/api/character_models/${id}`, options);
 	jsonData = await response.json();
 	if (!user_match){
@@ -1043,14 +1045,17 @@ if(user_match)
 	let model_ids = await get_user_model_ids(user_id);
 	console.log(`user ${user_id} have model ${model_ids.length}`);
 	for (let model_id of model_ids) {
-		if (existsSync(`./${cache_dir}/${user_id}/${model_id}/${model_id}.deob.vrm`,) === false) {
-			await sleep(5000);
-			console.log("sleep done")
-			//try {
-				deobfuscateVRoidHubGLB(model_id);
-			//}catch (error) {
-				//error_list.push(model_id);
-			//}
+		console.log("Processing model:", model_id);
+		const outputPath = `./${cache_dir}/${user_id}/${model_id}/${model_id}.deob.vrm`;
+		if (!existsSync(outputPath)) {
+			try {
+				await deobfuscateVRoidHubGLB(model_id);
+			} catch (err) {
+				console.error(`Failed to process ${model_id}:`, err.message);
+				error_list.push(model_id);
+			}
+		} else {
+			console.log(`Skipping (already exists): ${model_id}`);
 		}
 	}
 	if(error_list){
