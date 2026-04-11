@@ -694,7 +694,61 @@ export class PIXIVBasisExtension extends Extension {
 	}
 }
 
+async function get_user_model_ids(id) {
+	let model_ids = [];
+	let api_url = `https://hub.vroid.com/api/users/${id}/character_models?antisocial_or_hate_usage=&characterization_allowed_user=&corporate_commercial_use=&credit=&modification=&personal_commercial_use=&political_or_religious_usage=&redistribution=&sexual_expression=&violent_expression=`;
+	
+	//console.log(await response.json());
+	while(api_url)
+	{
+		let response = await fetch(api_url, options);
+		let model_list = await response.json();
+		if(model_list._links.next)
+		{
+			api_url = "https://hub.vroid.com"+model_list._links.next.href;
+		}else{
+			api_url = null;
+		}
+		model_list.data.forEach(model => {
+			model_ids.push(model.id);
+		});
+	}
+	return model_ids
+}
+
+async function download_model_info(id) {
+	let jsonData = null;
+	setGlobalDispatcher(new Agent({
+		allowH2: true
+	}));
+	let response = await fetch(`https://hub.vroid.com/api/character_models/${id}`, options);
+	jsonData = await response.json();
+	if (!user_match){
+		user_id = jsonData.data.character_detail.user_detail.user.id;
+	}
+	
+	
+	user_dir = `./${cache_dir}/${user_id}`;
+	if (existsSync(user_dir) === false) await mkdir(user_dir);
+	let model_data_dir = `./${cache_dir}/${user_id}/${id}`;
+	if (existsSync(model_data_dir) === false) await mkdir(model_data_dir);
+
+	const info_json_path=`${model_data_dir}/info.json`;
+	const full_body_path=`${model_data_dir}.png`;
+
+	await writeFile(info_json_path, JSON.stringify(jsonData, null, 2));
+	console.log("user_id",user_id);
+	//download full body image
+	if (existsSync(full_body_path) === false) {
+		console.log("Download full Body image");
+		let full_body_req = await fetch(jsonData.data.character_model.full_body_image.original.url);
+		let bufferData = await full_body_req.arrayBuffer();
+		await writeFile(full_body_path,Buffer.from(bufferData));
+	}
+}
+
 async function deobfuscateVRoidHubGLB(id) {
+	await download_model_info(id);
 	console.log("Starting deobfuscation process for VRoid Hub GLB...");
 
 	// vroid hub blocks HTTP/1.1 requests, so we have to enable HTTP/2
@@ -715,34 +769,47 @@ async function deobfuscateVRoidHubGLB(id) {
 		await mkdir("./debug");
 	}
 
-	if (existsSync("./cache") === false) await mkdir("./cache");
-	if (existsSync(`./cache/${id}.json`) === true) {
+	//if (existsSync("./cache") === false) await mkdir("./cache");
+	//if (existsSync(`./cache/${id}.json`) === true) {
+	if (existsSync(`./${cache_dir}/${user_id}/${id}/${id}.json`) === true) {
+		//console.log(`Loading cached GLB for ID: ${id}...`);
+		//const vrmInfo = JSON.parse(await readFile(`./cache/${id}.json`, "utf-8"));
+		//vrmUrl = vrmInfo.url;
+		//const vrmPath = `./cache/${id}.glb`;
 		console.log(`Loading cached GLB for ID: ${id}...`);
-		const vrmInfo = JSON.parse(await readFile(`./cache/${id}.json`, "utf-8"));
-		vrmUrl = vrmInfo.url;
-		const vrmPath = `./cache/${id}.glb`;
+		const vrmInfo = JSON.parse(await readFile(`./${cache_dir}/${user_id}/${id}/${id}.json`, "utf-8"));
+		const vrmPath = `./${cache_dir}/${user_id}/${id}/${id}.glb`;
+		console.log("file exit json")
 		vrmData = await readFile(vrmPath);
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
 		
-		const options = {
-			headers: {
-				"X-Api-Version": "11",
-				"User-Agent":
-					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-			},
-		};
+		//const options = {
+		//	headers: {
+		//		"X-Api-Version": "11",
+		//		"User-Agent":
+		//			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+		//	},
+		//};
 		let response = await fetch(`https://hub.vroid.com/api/character_models/${id}/optimized_preview`, options);
 		if (response.status === 404) {
 			console.log('/optimized_preview not found, trying /preview')
 			response = await fetch(`https://hub.vroid.com/api/character_models/${id}/preview`, options);
 		}
-
+		if (response.status === 403) {
+			console.log("get failed")
+		}
 		vrmData = await response.arrayBuffer();
-		const vrmPath = `./cache/${id}.glb`;
-		const vrmInfoPath = `./cache/${id}.json`;
+		//const vrmPath = `./cache/${id}.glb`;
+		//const vrmInfoPath = `./cache/${id}.json`;
+		const vrmPath = `./${cache_dir}/${user_id}/${id}/${id}.glb`;
+		const vrmInfoPath = `./${cache_dir}/${user_id}/${id}/${id}.json`;
 
-		if (!response.ok) throw new Error("Failed to grab the encrypted VRM.");
+		//if (!response.ok) throw new Error("Failed to grab the encrypted VRM.");
+		if (!response.ok){
+			error_list.push(id);
+			return null;
+		}
 
 		vrmData = await decryptAndDecodeVRMFile(vrmData);
 
@@ -824,7 +891,7 @@ async function deobfuscateVRoidHubGLB(id) {
 			throw new Error(`Seed not found for timestamp: ${timestamp}`);
 		}
 	}
-	
+	console.log(seedMap);
 	const deobfuscator = new Deobfuscator(seed, version, timestamp);
 	deobfuscator.processDocument(doc);
 	// VRoid preview GLBs face +Z; rotate 180° so exported VRMs look toward -Z like Unity/VRM expect.
@@ -837,6 +904,7 @@ async function deobfuscateVRoidHubGLB(id) {
 	const textures = doc.getRoot().listTextures() || [];
 	console.log("Decoding textures...");
 	for (const texture of textures) {
+		break;//jump export tex
 		const image = texture.getImage();
 		const mime = texture.getMimeType();
 
@@ -928,7 +996,8 @@ async function deobfuscateVRoidHubGLB(id) {
 
 	io.setVertexLayout(VertexLayout.SEPARATE);
 	const outputGLB = await io.writeBinary(doc);
-	writeFile(`./${id}.deob.vrm`, outputGLB);
+	//writeFile(`./${id}.deob.vrm`, outputGLB);
+	writeFile(`./${cache_dir}/${user_id}/${id}/${id}.deob.vrm`, outputGLB);
 
 	console.log(
 		`Deobfuscation process for VRoid Hub GLB with ID: ${id} completed.`,
@@ -939,9 +1008,70 @@ async function deobfuscateVRoidHubGLB(id) {
 const parseVRoidHubURL = (url) =>
 	url.replace(/\/+$/, "").split("/").slice(-1)[0];
 
+//const target = process.argv.slice(-1)[0];
+//if (!target.startsWith("https://") && Number.isNaN(Number.parseInt(target))) {
+//	throw new Error("That's not a valid VRoid Hub URL.");
+//}
+
+//deobfuscateVRoidHubGLB(parseVRoidHubURL(target));
+
+const cache_dir = "./cache";
+let user_dir;
+let user_id;
 const target = process.argv.slice(-1)[0];
-if (!target.startsWith("https://") && Number.isNaN(Number.parseInt(target))) {
-	throw new Error("That's not a valid VRoid Hub URL.");
+const options = {
+	headers: {
+		"X-Api-Version": "11",
+		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+		"Referer": "https://hub.vroid.com/en/characters/2533837067352303068/models/5292605813764344136",
+		"Cookie": "_ga=GA1.2.1425015193.1771948677; _gid=GA1.2.108538913.1774188397; cf_clearance=6iYMdhQX_SBSAgZ.XWoFVVckYV0saqxnhIoVDFqVfB0-1774187042-1.2.1.1-_MMDtdfwWc2kVv3LsFGwkb4ucD36yqh6j_RV4SJTBQtjboGygJOveDhW6as6xgsZ7CJdfeAWw9SsKxMtOvmiFBTfkROjsKcb1D0zTpieijR3zutcO7RBMM6RPQHNUnM8_cWAaOeYrHRvkl2Dzw8WJPMjSJtdygCkm3orlJbKZJPZK.t3wzuclCi_aDvSymLTz9sUJjYLgoJ5TaQNeTHxxS9kEmiKNqSCxJspgEsDfPE; ...", // 保留有效 cookie
+	},
+};
+const BASE_PART = "(?:https?:\\/\\/)?hub\\.vroid\\.com\\/(?:[a-z]{2}\\/)?";
+// VROID_USER 
+const VROID_USER_PATTERN = BASE_PART + "users\\/(\\d+)";
+const vroidUserRegex = new RegExp(VROID_USER_PATTERN);
+const user_match=target.match(vroidUserRegex);
+// VROID_MODEL 
+const VROID_MODEL_PATTERN = BASE_PART + "characters\\/(\\d+)\\/models\\/(\\d+)";
+const vroidModelRegex = new RegExp(VROID_MODEL_PATTERN);
+const model_match=target.match(vroidModelRegex);
+if (existsSync(cache_dir) === false) await mkdir(cache_dir);
+
+let error_list = [];
+if(user_match)
+{
+	user_id = user_match[1];
+	let model_ids = await get_user_model_ids(user_id);
+	console.log(`user ${user_id} have model ${model_ids.length}`);
+	for (let model_id of model_ids) {
+		console.log("Processing model:", model_id);
+		const outputPath = `./${cache_dir}/${user_id}/${model_id}/${model_id}.deob.vrm`;
+		if (!existsSync(outputPath)) {
+			try {
+				await deobfuscateVRoidHubGLB(model_id);
+			} catch (err) {
+				console.error(`Failed to process ${model_id}:`, err.message);
+				error_list.push(model_id);
+			}
+		} else {
+			console.log(`Skipping (already exists): ${model_id}`);
+		}
+		await sleep(5000);
+	}
+	if(error_list){
+		console.log("error list",error_list);
+	}
+	process.exit();
+}
+if (model_match)
+{
+	console.log("Single Model Download Mode!");
+	const chara_id = model_match[1];
+	const model_id = model_match[2];
+	deobfuscateVRoidHubGLB(model_id);
 }
 
-deobfuscateVRoidHubGLB(parseVRoidHubURL(target));
+function sleep(time) {
+	return new Promise(resolve => setTimeout(resolve, time));
+}
