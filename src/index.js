@@ -8,8 +8,11 @@ import {
 	VertexLayout,
 } from "@gltf-transform/core";
 import { KHRONOS_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
-import { existsSync } from "node:fs";
-import { mkdir, writeFile, readFile, unlink, readdir, rm } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { mkdir, writeFile, readFile, unlink, readdir, rm, copyFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import os from "node:os";
+import path from "node:path";
 import vm from "node:vm"
 import crypto from "node:crypto";
 import sharp from "sharp";
@@ -639,6 +642,52 @@ export class PIXIVBasisExtension extends Extension {
 	}
 }
 
+// VRoid Hub gates previews for certain models behind login (viewer_preview_usage_level: "login_user"),
+// so anonymous requests to /optimized_preview get a 404. We pull the logged-in session
+// cookie (_vroid_session, scoped to .vroid.com) straight out of the Firefox cookie store.
+async function getVRoidSessionCookie() {
+	const profilesDir = path.join(os.homedir(), "AppData", "Roaming", "Mozilla", "Firefox", "Profiles");
+	if (!existsSync(profilesDir)) return null;
+
+	const tmpDb = path.join(os.tmpdir(), `vrh_cookies_${process.pid}.sqlite`);
+
+	for (const profile of readdirSync(profilesDir)) {
+		const dbPath = path.join(profilesDir, profile, "cookies.sqlite");
+		if (!existsSync(dbPath)) continue;
+
+		// Copy the DB plus its WAL/SHM so recently-written cookies (which may not be
+		// checkpointed into the main file yet) are visible without touching the live store.
+		try {
+			await copyFile(dbPath, tmpDb);
+			for (const ext of ["-wal", "-shm"]) {
+				if (existsSync(dbPath + ext)) await copyFile(dbPath + ext, tmpDb + ext);
+			}
+		} catch {
+			continue;
+		}
+
+		try {
+			const db = new DatabaseSync(tmpDb, { readOnly: true });
+			const row = db
+				.prepare("SELECT value FROM moz_cookies WHERE host LIKE ? AND name = ?")
+				.get("%vroid.com%", "_vroid_session");
+			db.close();
+			if (row?.value) {
+				console.log(`Using VRoid session cookie from Firefox profile: ${profile}`);
+				return `_vroid_session=${row.value}`;
+			}
+		} catch {
+			// fall through to next profile
+		} finally {
+			for (const ext of ["", "-wal", "-shm"]) {
+				await rm(tmpDb + ext, { force: true }).catch(() => {});
+			}
+		}
+	}
+
+	return null;
+}
+
 async function deobfuscateVRoidHubGLB(id) {
 	console.log("Starting deobfuscation process for VRoid Hub GLB...");
 
@@ -670,11 +719,17 @@ async function deobfuscateVRoidHubGLB(id) {
 	} else {
 		console.log(`Fetching VRM data for ID: ${id}...`);
 		
+		const sessionCookie = await getVRoidSessionCookie();
+		if (!sessionCookie) {
+			console.warn("Warning: no VRoid session cookie found in Firefox. Login-gated previews will 404.");
+		}
+
 		const options = {
 			headers: {
 				"X-Api-Version": "11",
 				"User-Agent":
 					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+				...(sessionCookie ? { Cookie: sessionCookie } : {}),
 			},
 		};
 		let response = await fetch(`https://hub.vroid.com/api/character_models/${id}/optimized_preview`, options);
